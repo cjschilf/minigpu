@@ -1,0 +1,7 @@
+# Don't track Verilator build output
+obj_dir/
+logs/
+*.vcd
+*.fst
+*.vpd
+*.dmp
