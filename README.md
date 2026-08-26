@@ -1,8 +1,8 @@
 # MiniGPU
 
-MiniGPU is a learning-oriented, RV32-derived SIMT processor. The near-term
-target is a verified, tileable compute unit: one instruction stream controls a
-parameterized array of lanes, similar in role to an NVIDIA Streaming
+MiniGPU is a learning-oriented, RV32-derived SIMT processor. The current
+target is a verified, tileable compute unit with one instruction stream and a
+parameterized array of lanes, similar in structure to an NVIDIA Streaming
 Multiprocessor or AMD Compute Unit.
 
 The project intentionally starts with a small custom subset rather than claiming

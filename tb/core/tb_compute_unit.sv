@@ -28,7 +28,7 @@ module tb_compute_unit;
   logic [LANES-1:0] retire_write_mask;
   logic [LANES-1:0][XLEN-1:0] retire_data;
 
-  logic [31:0] instruction_memory [0:3];
+  logic [31:0] instruction_memory [0:6];
   int retire_count;
   logic completed;
 
@@ -82,6 +82,20 @@ module tb_compute_unit;
     return {imm, rs1, funct3, rd, 7'b0010011};
   endfunction
 
+  function automatic logic [31:0] encode_b(
+      logic signed [12:0] imm,
+      logic [4:0] rs2,
+      logic [4:0] rs1,
+      logic [2:0] funct3
+  );
+    if (imm[0]) begin
+      return 'x;
+    end else begin
+      return {imm[12], imm[10:5], rs2, rs1, funct3,
+              imm[4:1], imm[11], 7'b1100011};
+    end
+  endfunction
+
   initial begin
     clk = 1'b0;
     forever #5 clk = ~clk;
@@ -107,6 +121,9 @@ module tb_compute_unit;
           32'h0000_0004: instruction_response_data <= instruction_memory[1];
           32'h0000_0008: instruction_response_data <= instruction_memory[2];
           32'h0000_000c: instruction_response_data <= instruction_memory[3];
+          32'h0000_0010: instruction_response_data <= instruction_memory[4];
+          32'h0000_0014: instruction_response_data <= instruction_memory[5];
+          32'h0000_0018: instruction_response_data <= instruction_memory[6];
           default:       instruction_response_data <= 32'hffff_ffff;
         endcase
       end
@@ -119,26 +136,49 @@ module tb_compute_unit;
       completed    <= 1'b0;
     end else begin
       if (retire_valid) begin
-        if (retire_pc != (retire_count * 4) ||
-            retire_instruction != instruction_memory[retire_count] ||
-            retire_write_mask != {LANES{1'b1}}) begin
-          $fatal(1, "Unexpected retire metadata");
-        end
-
         unique case (retire_count)
           0: begin
+            if (retire_pc != 32'h0 ||
+                retire_instruction != instruction_memory[0] ||
+                retire_write_mask != {LANES{1'b1}}) begin
+              $fatal(1, "Unexpected first ADDI retirement");
+            end
             if (retire_rd != 5'd1) $fatal(1, "Expected x1 write");
             for (int lane = 0; lane < LANES; lane++) begin
               if (retire_data[lane] != 32'd5) $fatal(1, "ADDI x1 failed");
             end
           end
           1: begin
+            if (retire_pc != 32'h4 ||
+                retire_instruction != instruction_memory[1] ||
+                retire_write_mask != '0) begin
+              $fatal(1, "Taken branch retirement failed");
+            end
+          end
+          2: begin
+            if (retire_pc != 32'hc ||
+                retire_instruction != instruction_memory[3] ||
+                retire_write_mask != {LANES{1'b1}}) begin
+              $fatal(1, "Unexpected second ADDI retirement");
+            end
             if (retire_rd != 5'd2) $fatal(1, "Expected x2 write");
             for (int lane = 0; lane < LANES; lane++) begin
               if (retire_data[lane] != 32'd12) $fatal(1, "ADDI x2 failed");
             end
           end
-          2: begin
+          3: begin
+            if (retire_pc != 32'h10 ||
+                retire_instruction != instruction_memory[4] ||
+                retire_write_mask != '0) begin
+              $fatal(1, "Not-taken branch retirement failed");
+            end
+          end
+          4: begin
+            if (retire_pc != 32'h14 ||
+                retire_instruction != instruction_memory[5] ||
+                retire_write_mask != {LANES{1'b1}}) begin
+              $fatal(1, "Unexpected ADD retirement");
+            end
             if (retire_rd != 5'd3) $fatal(1, "Expected x3 write");
             for (int lane = 0; lane < LANES; lane++) begin
               if (retire_data[lane] != 32'd17) $fatal(1, "ADD x3 failed");
@@ -162,10 +202,13 @@ module tb_compute_unit;
 
   initial begin
     instruction_memory[0] = encode_i(12'sd5, 5'd0, 3'b000, 5'd1);
-    instruction_memory[1] = encode_i(12'sd7, 5'd1, 3'b000, 5'd2);
-    instruction_memory[2] =
+    instruction_memory[1] = encode_b(13'sd8, 5'd1, 5'd1, 3'b000);
+    instruction_memory[2] = encode_i(12'sd99, 5'd0, 3'b000, 5'd2);
+    instruction_memory[3] = encode_i(12'sd7, 5'd1, 3'b000, 5'd2);
+    instruction_memory[4] = encode_b(13'sd8, 5'd1, 5'd1, 3'b001);
+    instruction_memory[5] =
       encode_r(7'b0000000, 5'd2, 5'd1, 3'b000, 5'd3);
-    instruction_memory[3] = 32'h0010_0073;
+    instruction_memory[6] = 32'h0010_0073;
 
     reset_n = 1'b0;
     dispatch_valid = 1'b0;
@@ -190,7 +233,7 @@ module tb_compute_unit;
       @(posedge clk);
     end
 
-    if (!completed || retire_count != 3) begin
+    if (!completed || retire_count != 5) begin
       $fatal(1, "Compute unit did not complete the kernel");
     end
 

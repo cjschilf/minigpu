@@ -46,13 +46,17 @@ module compute_unit #(
 
   logic vector_issue_valid;
   minigpu_pkg::alu_op_e vector_issue_alu_op;
+  minigpu_pkg::branch_op_e vector_issue_branch_op;
   logic [4:0] vector_issue_rs1;
   logic [4:0] vector_issue_rs2;
   logic vector_issue_use_immediate;
+  logic vector_issue_use_lane_id;
   logic [XLEN-1:0] vector_issue_immediate;
   logic [LANES-1:0] vector_issue_exec_mask;
   logic [LANES-1:0][XLEN-1:0] vector_execute_result;
   logic [LANES-1:0] vector_execute_valid_mask;
+  logic [LANES-1:0] vector_branch_taken_mask;
+  logic [LANES-1:0] vector_branch_valid_mask;
 
   logic vector_writeback_enable;
   logic [4:0] vector_writeback_rd;
@@ -100,13 +104,17 @@ module compute_unit #(
     .instruction_response_error(instruction_response_error),
     .vector_issue_valid(vector_issue_valid),
     .vector_issue_alu_op(vector_issue_alu_op),
+    .vector_issue_branch_op(vector_issue_branch_op),
     .vector_issue_rs1(vector_issue_rs1),
     .vector_issue_rs2(vector_issue_rs2),
     .vector_issue_use_immediate(vector_issue_use_immediate),
+    .vector_issue_use_lane_id(vector_issue_use_lane_id),
     .vector_issue_immediate(vector_issue_immediate),
     .vector_issue_exec_mask(vector_issue_exec_mask),
     .vector_execute_result(vector_execute_result),
     .vector_execute_valid_mask(vector_execute_valid_mask),
+    .vector_branch_taken_mask(vector_branch_taken_mask),
+    .vector_branch_valid_mask(vector_branch_valid_mask),
     .vector_writeback_enable(vector_writeback_enable),
     .vector_writeback_rd(vector_writeback_rd),
     .vector_writeback_mask(vector_writeback_mask),
@@ -135,9 +143,11 @@ module compute_unit #(
     .reset_n(reset_n),
     .issue_valid(vector_issue_valid),
     .issue_alu_op(vector_issue_alu_op),
+    .issue_branch_op(vector_issue_branch_op),
     .issue_rs1(vector_issue_rs1),
     .issue_rs2(vector_issue_rs2),
     .issue_use_immediate(vector_issue_use_immediate),
+    .issue_use_lane_id(vector_issue_use_lane_id),
     .issue_immediate(vector_issue_immediate),
     .issue_exec_mask(vector_issue_exec_mask),
     .writeback_enable(vector_writeback_enable),
@@ -145,7 +155,9 @@ module compute_unit #(
     .writeback_mask(vector_writeback_mask),
     .writeback_data(vector_writeback_data),
     .execute_result(vector_execute_result),
-    .execute_valid_mask(vector_execute_valid_mask)
+    .execute_valid_mask(vector_execute_valid_mask),
+    .branch_taken_mask(vector_branch_taken_mask),
+    .branch_valid_mask(vector_branch_valid_mask)
   );
 
 endmodule

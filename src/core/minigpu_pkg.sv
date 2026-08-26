@@ -37,11 +37,12 @@ package minigpu_pkg;
     MEM_STORE = 2'd2
   } mem_op_e;
 
-  typedef enum logic [1:0] {
-    COMPLETE_SUCCESS     = 2'd0,
-    COMPLETE_ILLEGAL     = 2'd1,
-    COMPLETE_UNSUPPORTED = 2'd2,
-    COMPLETE_MEMORY_ERR  = 2'd3
+  typedef enum logic [2:0] {
+    COMPLETE_SUCCESS     = 3'd0,
+    COMPLETE_ILLEGAL     = 3'd1,
+    COMPLETE_UNSUPPORTED = 3'd2,
+    COMPLETE_MEMORY_ERR  = 3'd3,
+    COMPLETE_DIVERGENCE  = 3'd4
   } completion_status_e;
 
   typedef struct packed {
@@ -53,6 +54,7 @@ package minigpu_pkg;
     reg_idx_t   rs2;
     reg_idx_t   rd;
     logic        use_immediate;
+    logic        use_lane_id;
     logic        register_write;
     logic        ebreak;
     logic        illegal;

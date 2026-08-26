@@ -11,8 +11,10 @@ module tb_vector_datapath;
   logic reset_n;
   logic issue_valid;
   alu_op_e issue_alu_op;
+  branch_op_e issue_branch_op;
   logic [4:0] issue_rs1, issue_rs2;
   logic issue_use_immediate;
+  logic issue_use_lane_id;
   logic [XLEN-1:0] issue_immediate;
   logic [LANES-1:0] issue_exec_mask;
   logic writeback_enable;
@@ -21,6 +23,8 @@ module tb_vector_datapath;
   logic [LANES-1:0][XLEN-1:0] writeback_data;
   logic [LANES-1:0][XLEN-1:0] execute_result;
   logic [LANES-1:0] execute_valid_mask;
+  logic [LANES-1:0] branch_taken_mask, branch_valid_mask;
+  logic branch_all_taken, branch_divergent;
 
   vector_datapath #(
     .LANES(LANES),
@@ -30,9 +34,11 @@ module tb_vector_datapath;
     .reset_n(reset_n),
     .issue_valid(issue_valid),
     .issue_alu_op(issue_alu_op),
+    .issue_branch_op(issue_branch_op),
     .issue_rs1(issue_rs1),
     .issue_rs2(issue_rs2),
     .issue_use_immediate(issue_use_immediate),
+    .issue_use_lane_id(issue_use_lane_id),
     .issue_immediate(issue_immediate),
     .issue_exec_mask(issue_exec_mask),
     .writeback_enable(writeback_enable),
@@ -40,7 +46,16 @@ module tb_vector_datapath;
     .writeback_mask(writeback_mask),
     .writeback_data(writeback_data),
     .execute_result(execute_result),
-    .execute_valid_mask(execute_valid_mask)
+    .execute_valid_mask(execute_valid_mask),
+    .branch_taken_mask(branch_taken_mask),
+    .branch_valid_mask(branch_valid_mask)
+  );
+
+  branch_resolver #(.LANES(LANES)) resolver (
+    .exec_mask(issue_exec_mask),
+    .taken_mask(branch_taken_mask),
+    .all_taken(branch_all_taken),
+    .divergent(branch_divergent)
   );
 
   initial begin
@@ -69,9 +84,11 @@ module tb_vector_datapath;
     reset_n = 1'b0;
     issue_valid = 1'b0;
     issue_alu_op = ALU_INVALID;
+    issue_branch_op = BR_NONE;
     issue_rs1 = '0;
     issue_rs2 = '0;
     issue_use_immediate = 1'b0;
+    issue_use_lane_id = 1'b0;
     issue_immediate = '0;
     issue_exec_mask = '0;
     writeback_enable = 1'b0;
@@ -124,6 +141,65 @@ module tb_vector_datapath;
     #1;
     if (execute_valid_mask != '0) begin
       $fatal(1, "Invalid issue produced a valid result");
+    end
+
+    issue_valid = 1'b1;
+    issue_alu_op = ALU_ADD;
+    issue_branch_op = BR_NONE;
+    issue_rs1 = 5'd0;
+    issue_use_lane_id = 1'b1;
+    issue_exec_mask = '1;
+    #1;
+
+    if (execute_valid_mask != '1) begin
+      $fatal(1, "Lane-ID operation was not valid");
+    end
+    for (int lane = 0; lane < LANES; lane++) begin
+      if (execute_result[lane] != lane) begin
+        $fatal(1, "Static lane ID failed on lane %0d", lane);
+      end
+    end
+
+    issue_use_lane_id = 1'b0;
+    issue_valid = 1'b1;
+    issue_alu_op = ALU_INVALID;
+    issue_branch_op = BR_LT;
+    issue_rs1 = 5'd1;
+    issue_rs2 = 5'd2;
+    issue_exec_mask = '1;
+    #1;
+
+    if (branch_valid_mask != 4'b1111 ||
+        branch_taken_mask != 4'b1111 ||
+        !branch_all_taken || branch_divergent) begin
+      $fatal(1, "Uniform taken branch resolution failed");
+    end
+
+    issue_valid = 1'b0;
+    writeback_rd = 5'd4;
+    writeback_mask = '1;
+    writeback_data[0] = 32'd5;
+    writeback_data[1] = 32'd15;
+    writeback_data[2] = 32'd5;
+    writeback_data[3] = 32'd15;
+    writeback_enable = 1'b1;
+    @(posedge clk);
+    #1;
+    writeback_enable = 1'b0;
+
+    issue_valid = 1'b1;
+    issue_alu_op = ALU_INVALID;
+    issue_branch_op = BR_LT;
+    issue_rs1 = 5'd1;
+    issue_rs2 = 5'd4;
+    issue_use_immediate = 1'b0;
+    issue_exec_mask = '1;
+    #1;
+
+    if (branch_valid_mask != 4'b1111 ||
+        branch_taken_mask != 4'b1010 ||
+        branch_all_taken || !branch_divergent) begin
+      $fatal(1, "Per-lane branch mask generation failed");
     end
 
     $display("Vector datapath regression passed");

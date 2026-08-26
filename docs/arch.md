@@ -46,6 +46,7 @@ All sizes must remain parameters, but the verification baseline is:
 - `LANES = 4`
 - `WAVEFRONTS = 1`
 - 32 integer registers per lane
+- one static zero-based ID per physical lane
 - one shared PC and active mask per wavefront
 - one instruction issued at a time
 - little-endian, byte-addressed memory

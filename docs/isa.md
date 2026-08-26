@@ -75,6 +75,16 @@ otherwise it is `PC + 4`.
 `MUL` returns the low 32 bits of the two's-complement product. Its initial
 implementation may be combinational; latency is not architectural.
 
+## Lane Identification
+
+`LANEID rd` writes each active lane's static zero-based lane index to `rd`.
+It uses the RISC-V custom-0 opcode `0001011`; bits `[31:12]` must be zero and
+bits `[11:7]` select `rd`.
+
+Lane IDs are fixed by the SIMD lane position and do not change between
+dispatches. This custom instruction exposes that hardware identity without
+reserving or changing the semantics of a general-purpose register.
+
 ## Kernel Completion
 
 `EBREAK` uses its standard encoding, `0x00100073`. In the initial runtime it

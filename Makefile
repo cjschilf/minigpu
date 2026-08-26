@@ -12,26 +12,33 @@ VERILATOR_FLAGS += -CFLAGS -Wno-unknown-warning-option
 endif
 
 PKG := src/core/minigpu_pkg.sv
+COMPUTE_RTL := \
+	$(PKG) \
+	src/core/alu.sv \
+	src/core/branch_unit.sv \
+	src/core/branch_resolver.sv \
+	src/core/immediate_gen.sv \
+	src/core/instruction_decoder.sv \
+	src/core/simd_alu.sv \
+	src/core/simd_branch_unit.sv \
+	src/core/vgpr_file.sv \
+	src/core/vector_datapath.sv \
+	src/core/wavefront_state.sv \
+	src/core/wavefront_controller.sv \
+	src/core/compute_unit.sv
 
 .PHONY: all test lint sim sim-alu sim-decode sim-simd-alu sim-vgpr \
-	sim-vector-datapath sim-wavefront sim-compute-unit clean
+	sim-vector-datapath sim-wavefront sim-compute-unit sim-lane-id clean
 
 all: test
 
 test: lint sim
 
 lint:
-	$(VERILATOR) --lint-only -Wall --top-module compute_unit \
-		$(PKG) src/core/alu.sv src/core/immediate_gen.sv \
-		src/core/instruction_decoder.sv src/core/simd_alu.sv \
-		src/core/vgpr_file.sv src/core/vector_datapath.sv \
-		src/core/wavefront_state.sv src/core/wavefront_controller.sv \
-		src/core/compute_unit.sv
-	$(VERILATOR) --lint-only -Wall --top-module branch_unit \
-		$(PKG) src/core/branch_unit.sv
+	$(VERILATOR) --lint-only -Wall --top-module compute_unit $(COMPUTE_RTL)
 
 sim: sim-alu sim-decode sim-simd-alu sim-vgpr sim-vector-datapath \
-	sim-wavefront sim-compute-unit
+	sim-wavefront sim-compute-unit sim-lane-id
 
 sim-alu:
 	mkdir -p $(BUILD_DIR)
@@ -68,7 +75,9 @@ sim-vector-datapath:
 	$(VERILATOR) --binary $(VERILATOR_FLAGS) \
 		--Mdir $(BUILD_DIR)/obj_vector_datapath \
 		--top-module tb_vector_datapath \
-		$(PKG) src/core/alu.sv src/core/simd_alu.sv \
+		$(PKG) src/core/alu.sv src/core/branch_unit.sv \
+		src/core/branch_resolver.sv src/core/simd_alu.sv \
+		src/core/simd_branch_unit.sv \
 		src/core/vgpr_file.sv src/core/vector_datapath.sv \
 		tb/core/tb_vector_datapath.sv
 	./$(BUILD_DIR)/obj_vector_datapath/Vtb_vector_datapath
@@ -84,12 +93,15 @@ sim-compute-unit:
 	mkdir -p $(BUILD_DIR)
 	$(VERILATOR) --binary $(VERILATOR_FLAGS) \
 		--Mdir $(BUILD_DIR)/obj_compute_unit --top-module tb_compute_unit \
-		$(PKG) src/core/alu.sv src/core/immediate_gen.sv \
-		src/core/instruction_decoder.sv src/core/simd_alu.sv \
-		src/core/vgpr_file.sv src/core/vector_datapath.sv \
-		src/core/wavefront_state.sv src/core/wavefront_controller.sv \
-		src/core/compute_unit.sv tb/core/tb_compute_unit.sv
+		$(COMPUTE_RTL) tb/core/tb_compute_unit.sv
 	./$(BUILD_DIR)/obj_compute_unit/Vtb_compute_unit
+
+sim-lane-id:
+	mkdir -p $(BUILD_DIR)
+	$(VERILATOR) --binary $(VERILATOR_FLAGS) \
+		--Mdir $(BUILD_DIR)/obj_lane_id --top-module tb_lane_id \
+		$(COMPUTE_RTL) tb/core/tb_lane_id.sv
+	./$(BUILD_DIR)/obj_lane_id/Vtb_lane_id
 
 clean:
 	rm -rf $(BUILD_DIR)

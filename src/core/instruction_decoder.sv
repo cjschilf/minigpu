@@ -13,6 +13,7 @@ module instruction_decoder (
   localparam logic [6:0] OPCODE_STORE  = 7'b0100011;
   localparam logic [6:0] OPCODE_BRANCH = 7'b1100011;
   localparam logic [6:0] OPCODE_SYSTEM = 7'b1110011;
+  localparam logic [6:0] OPCODE_CUSTOM = 7'b0001011;
 
   logic [6:0] opcode;
   logic [2:0] funct3;
@@ -88,6 +89,15 @@ module instruction_decoder (
           3'b111: begin control.branch_op = BR_GEU; control.illegal = 1'b0; end
           default: control.branch_op = BR_NONE;
         endcase
+      end
+
+      OPCODE_CUSTOM: begin
+        if (instruction[31:12] == '0) begin
+          control.alu_op         = ALU_ADD;
+          control.use_lane_id    = 1'b1;
+          control.register_write = 1'b1;
+          control.illegal        = 1'b0;
+        end
       end
 
       OPCODE_SYSTEM: begin

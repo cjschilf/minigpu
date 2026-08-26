@@ -136,6 +136,14 @@ module tb_decode;
       $fatal(1, "BEQ decode failed");
     end
 
+    instruction = {20'b0, 5'd9, 7'b0001011};
+    #1;
+    if (control.illegal || control.alu_op != ALU_ADD ||
+        !control.use_lane_id || !control.register_write ||
+        control.rd != 5'd9) begin
+      $fatal(1, "LANEID decode failed");
+    end
+
     instruction = 32'h0010_0073;
     #1;
     if (control.illegal || !control.ebreak || control.register_write) begin

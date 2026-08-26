@@ -24,13 +24,17 @@ module wavefront_controller #(
 
     output logic                                  vector_issue_valid,
     output minigpu_pkg::alu_op_e                  vector_issue_alu_op,
+    output minigpu_pkg::branch_op_e               vector_issue_branch_op,
     output logic [REG_ADDR_WIDTH-1:0]             vector_issue_rs1,
     output logic [REG_ADDR_WIDTH-1:0]             vector_issue_rs2,
     output logic                                  vector_issue_use_immediate,
+    output logic                                  vector_issue_use_lane_id,
     output logic [XLEN-1:0]                       vector_issue_immediate,
     output logic [LANES-1:0]                      vector_issue_exec_mask,
     input  logic [LANES-1:0][XLEN-1:0]            vector_execute_result,
     input  logic [LANES-1:0]                      vector_execute_valid_mask,
+    input  logic [LANES-1:0]                      vector_branch_taken_mask,
+    input  logic [LANES-1:0]                      vector_branch_valid_mask,
 
     output logic                                  vector_writeback_enable,
     output logic [REG_ADDR_WIDTH-1:0]             vector_writeback_rd,
@@ -70,7 +74,12 @@ module wavefront_controller #(
   decode_ctrl_t decode;
   logic [31:0] immediate;
   completion_status_e status;
-  logic execute_supported;
+  logic alu_supported;
+  logic branch_supported;
+  logic alu_complete;
+  logic branch_complete;
+  logic branch_all_taken;
+  logic branch_divergent;
   logic execute_complete;
 
   instruction_decoder decoder (
@@ -85,37 +94,60 @@ module wavefront_controller #(
     .immediate(immediate)
   );
 
+  branch_resolver #(.LANES(LANES)) resolver (
+    .exec_mask(wavefront_exec_mask),
+    .taken_mask(vector_branch_taken_mask),
+    .all_taken(branch_all_taken),
+    .divergent(branch_divergent)
+  );
+
   always_comb begin
-    execute_supported = !decode.illegal &&
-                        !decode.ebreak &&
-                        (decode.mem_op == MEM_NONE) &&
-                        (decode.branch_op == BR_NONE) &&
-                        (decode.alu_op != ALU_INVALID);
+    alu_supported = !decode.illegal &&
+                    !decode.ebreak &&
+                    (decode.mem_op == MEM_NONE) &&
+                    (decode.branch_op == BR_NONE) &&
+                    (decode.alu_op != ALU_INVALID);
+    branch_supported = !decode.illegal &&
+                       !decode.ebreak &&
+                       (decode.mem_op == MEM_NONE) &&
+                       (decode.branch_op != BR_NONE);
 
     instruction_request_valid   = state == STATE_FETCH_REQUEST;
     instruction_request_address = wavefront_pc;
     instruction_response_ready  = state == STATE_FETCH_RESPONSE;
 
-    vector_issue_valid         = (state == STATE_EXECUTE) && execute_supported;
+    vector_issue_valid         = (state == STATE_EXECUTE) &&
+                                 (alu_supported || branch_supported);
     vector_issue_alu_op        = decode.alu_op;
+    vector_issue_branch_op     = decode.branch_op;
     vector_issue_rs1           = decode.rs1;
     vector_issue_rs2           = decode.rs2;
     vector_issue_use_immediate = decode.use_immediate;
+    vector_issue_use_lane_id   = decode.use_lane_id;
     vector_issue_immediate     = immediate;
     vector_issue_exec_mask     = wavefront_exec_mask;
-    execute_complete           = vector_issue_valid &&
+    alu_complete               = vector_issue_valid &&
+                                 alu_supported &&
                                  (vector_execute_valid_mask ==
                                   wavefront_exec_mask);
+    branch_complete            = vector_issue_valid &&
+                                 branch_supported &&
+                                 (vector_branch_valid_mask ==
+                                  wavefront_exec_mask);
+    execute_complete           = alu_complete ||
+                                 (branch_complete && !branch_divergent);
 
     vector_writeback_enable = (state == STATE_EXECUTE) &&
-                              execute_complete &&
+                              alu_complete &&
                               decode.register_write;
     vector_writeback_rd     = decode.rd;
     vector_writeback_mask   = wavefront_exec_mask;
     vector_writeback_data   = vector_execute_result;
 
     wavefront_advance_valid     = (state == STATE_EXECUTE) && execute_complete;
-    wavefront_advance_pc        = wavefront_pc + 32'd4;
+    wavefront_advance_pc        = branch_all_taken
+                                  ? wavefront_pc + immediate
+                                  : wavefront_pc + 32'd4;
     wavefront_advance_exec_mask = wavefront_exec_mask;
     wavefront_complete_valid    = (state == STATE_COMPLETE) &&
                                   completion_ready;
@@ -171,11 +203,22 @@ module wavefront_controller #(
           end else if (decode.ebreak) begin
             status <= COMPLETE_SUCCESS;
             state  <= STATE_COMPLETE;
-          end else if (!execute_supported) begin
+          end else if (branch_supported) begin
+            if (branch_complete) begin
+              if (branch_divergent) begin
+                status <= COMPLETE_DIVERGENCE;
+                state  <= STATE_COMPLETE;
+              end else begin
+                state <= STATE_FETCH_REQUEST;
+              end
+            end
+          end else if (alu_supported) begin
+            if (alu_complete) begin
+              state <= STATE_FETCH_REQUEST;
+            end
+          end else begin
             status <= COMPLETE_UNSUPPORTED;
             state  <= STATE_COMPLETE;
-          end else if (execute_complete) begin
-            state <= STATE_FETCH_REQUEST;
           end
         end
 
