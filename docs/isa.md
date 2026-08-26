@@ -49,8 +49,9 @@ RV32I, RV32M, or RVV compliance.
 
 `LW` and `SW` use little-endian memory and require four-byte alignment.
 Misaligned effective addresses trap. Active lanes may use different effective
-addresses; the implementation may serialize those requests without changing
-their architectural result.
+addresses. The initial LSU serializes active lanes in ascending lane order;
+inactive lanes make no request. `LW` writes `rd` only after every active-lane
+response succeeds. `SW` retires after every active-lane response succeeds.
 
 ## Branch Instructions
 

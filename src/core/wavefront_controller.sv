@@ -35,11 +35,25 @@ module wavefront_controller #(
     input  logic [LANES-1:0]                      vector_execute_valid_mask,
     input  logic [LANES-1:0]                      vector_branch_taken_mask,
     input  logic [LANES-1:0]                      vector_branch_valid_mask,
+    input  logic [LANES-1:0][XLEN-1:0]            vector_store_data,
 
     output logic                                  vector_writeback_enable,
     output logic [REG_ADDR_WIDTH-1:0]             vector_writeback_rd,
     output logic [LANES-1:0]                      vector_writeback_mask,
     output logic [LANES-1:0][XLEN-1:0]            vector_writeback_data,
+
+    output logic                                  lsu_issue_valid,
+    input  logic                                  lsu_issue_ready,
+    output minigpu_pkg::mem_op_e                  lsu_issue_mem_op,
+    output logic [LANES-1:0]                      lsu_issue_mask,
+    output logic [LANES-1:0][XLEN-1:0]            lsu_issue_address,
+    output logic [LANES-1:0][XLEN-1:0]            lsu_issue_store_data,
+    input  logic                                  lsu_done_valid,
+    output logic                                  lsu_done_ready,
+    input  logic [LANES-1:0]                      lsu_done_mask,
+    input  logic [LANES-1:0][XLEN-1:0]            lsu_done_load_data,
+    input  logic                                  lsu_done_error,
+    input  logic                                  lsu_done_misaligned,
 
     output logic                                  wavefront_advance_valid,
     output logic [31:0]                           wavefront_advance_pc,
@@ -66,6 +80,7 @@ module wavefront_controller #(
     STATE_FETCH_REQUEST,
     STATE_FETCH_RESPONSE,
     STATE_EXECUTE,
+    STATE_MEMORY_WAIT,
     STATE_COMPLETE
   } state_e;
 
@@ -76,11 +91,14 @@ module wavefront_controller #(
   completion_status_e status;
   logic alu_supported;
   logic branch_supported;
+  logic memory_supported;
   logic alu_complete;
   logic branch_complete;
+  logic address_complete;
   logic branch_all_taken;
   logic branch_divergent;
   logic execute_complete;
+  logic memory_finish;
 
   instruction_decoder decoder (
     .instruction(instruction),
@@ -111,13 +129,15 @@ module wavefront_controller #(
                        !decode.ebreak &&
                        (decode.mem_op == MEM_NONE) &&
                        (decode.branch_op != BR_NONE);
-
-    instruction_request_valid   = state == STATE_FETCH_REQUEST;
-    instruction_request_address = wavefront_pc;
-    instruction_response_ready  = state == STATE_FETCH_RESPONSE;
+    memory_supported = !decode.illegal &&
+                       !decode.ebreak &&
+                       (decode.mem_op != MEM_NONE) &&
+                       (decode.branch_op == BR_NONE) &&
+                       (decode.alu_op == ALU_ADD);
 
     vector_issue_valid         = (state == STATE_EXECUTE) &&
-                                 (alu_supported || branch_supported);
+                                 (alu_supported || branch_supported ||
+                                  memory_supported);
     vector_issue_alu_op        = decode.alu_op;
     vector_issue_branch_op     = decode.branch_op;
     vector_issue_rs1           = decode.rs1;
@@ -126,6 +146,13 @@ module wavefront_controller #(
     vector_issue_use_lane_id   = decode.use_lane_id;
     vector_issue_immediate     = immediate;
     vector_issue_exec_mask     = wavefront_exec_mask;
+  end
+
+  always_comb begin
+    instruction_request_valid   = state == STATE_FETCH_REQUEST;
+    instruction_request_address = wavefront_pc;
+    instruction_response_ready  = state == STATE_FETCH_RESPONSE;
+
     alu_complete               = vector_issue_valid &&
                                  alu_supported &&
                                  (vector_execute_valid_mask ==
@@ -134,17 +161,41 @@ module wavefront_controller #(
                                  branch_supported &&
                                  (vector_branch_valid_mask ==
                                   wavefront_exec_mask);
+    address_complete           = vector_issue_valid &&
+                                 memory_supported &&
+                                 (vector_execute_valid_mask ==
+                                  wavefront_exec_mask);
+    lsu_done_ready             = state == STATE_MEMORY_WAIT;
     execute_complete           = alu_complete ||
                                  (branch_complete && !branch_divergent);
+    memory_finish              = (state == STATE_MEMORY_WAIT) &&
+                                 lsu_done_valid &&
+                                 lsu_done_ready &&
+                                 !lsu_done_error &&
+                                 !lsu_done_misaligned;
 
-    vector_writeback_enable = (state == STATE_EXECUTE) &&
-                              alu_complete &&
-                              decode.register_write;
+    vector_writeback_enable = ((state == STATE_EXECUTE) &&
+                               alu_complete &&
+                               decode.register_write) ||
+                              (memory_finish &&
+                               (decode.mem_op == MEM_LOAD));
     vector_writeback_rd     = decode.rd;
-    vector_writeback_mask   = wavefront_exec_mask;
-    vector_writeback_data   = vector_execute_result;
+    vector_writeback_mask   = memory_finish
+                              ? lsu_done_mask
+                              : wavefront_exec_mask;
+    vector_writeback_data   = memory_finish
+                              ? lsu_done_load_data
+                              : vector_execute_result;
 
-    wavefront_advance_valid     = (state == STATE_EXECUTE) && execute_complete;
+    lsu_issue_valid      = (state == STATE_EXECUTE) && address_complete;
+    lsu_issue_mem_op     = decode.mem_op;
+    lsu_issue_mask       = wavefront_exec_mask;
+    lsu_issue_address    = vector_execute_result;
+    lsu_issue_store_data = vector_store_data;
+
+    wavefront_advance_valid     = ((state == STATE_EXECUTE) &&
+                                   execute_complete) ||
+                                  memory_finish;
     wavefront_advance_pc        = branch_all_taken
                                   ? wavefront_pc + immediate
                                   : wavefront_pc + 32'd4;
@@ -156,12 +207,18 @@ module wavefront_controller #(
     completion_wavefront_id = wavefront_id;
     completion_status       = status;
 
-    retire_valid       = (state == STATE_EXECUTE) && execute_complete;
+    retire_valid       = ((state == STATE_EXECUTE) && execute_complete) ||
+                         memory_finish;
     retire_pc          = wavefront_pc;
     retire_instruction = instruction;
     retire_rd          = decode.rd;
-    retire_write_mask  = decode.register_write ? wavefront_exec_mask : '0;
-    retire_data        = vector_execute_result;
+    if (memory_finish) begin
+      retire_write_mask = (decode.mem_op == MEM_LOAD) ? lsu_done_mask : '0;
+      retire_data       = lsu_done_load_data;
+    end else begin
+      retire_write_mask = decode.register_write ? wavefront_exec_mask : '0;
+      retire_data       = vector_execute_result;
+    end
   end
 
   always_ff @(posedge clk or negedge reset_n) begin
@@ -216,9 +273,27 @@ module wavefront_controller #(
             if (alu_complete) begin
               state <= STATE_FETCH_REQUEST;
             end
+          end else if (memory_supported) begin
+            if (address_complete && lsu_issue_ready) begin
+              state <= STATE_MEMORY_WAIT;
+            end
           end else begin
             status <= COMPLETE_UNSUPPORTED;
             state  <= STATE_COMPLETE;
+          end
+        end
+
+        STATE_MEMORY_WAIT: begin
+          if (lsu_done_valid && lsu_done_ready) begin
+            if (lsu_done_misaligned) begin
+              status <= COMPLETE_MISALIGNED;
+              state  <= STATE_COMPLETE;
+            end else if (lsu_done_error) begin
+              status <= COMPLETE_MEMORY_ERR;
+              state  <= STATE_COMPLETE;
+            end else begin
+              state <= STATE_FETCH_REQUEST;
+            end
           end
         end
 

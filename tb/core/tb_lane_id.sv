@@ -19,6 +19,12 @@ module tb_lane_id;
   logic instruction_response_valid, instruction_response_ready;
   logic [31:0] instruction_response_data;
   logic instruction_response_error;
+  logic data_request_valid, data_request_ready, data_request_write;
+  logic [31:0] data_request_address, data_request_write_data;
+  logic [3:0] data_request_strobe;
+  logic data_response_valid, data_response_ready;
+  logic [31:0] data_response_read_data;
+  logic data_response_error;
   logic completion_valid, completion_ready;
   logic [ID_WIDTH-1:0] completion_wavefront_id;
   completion_status_e completion_status;
@@ -51,6 +57,16 @@ module tb_lane_id;
     .instruction_response_ready(instruction_response_ready),
     .instruction_response_data(instruction_response_data),
     .instruction_response_error(instruction_response_error),
+    .data_request_valid(data_request_valid),
+    .data_request_ready(data_request_ready),
+    .data_request_write(data_request_write),
+    .data_request_address(data_request_address),
+    .data_request_write_data(data_request_write_data),
+    .data_request_strobe(data_request_strobe),
+    .data_response_valid(data_response_valid),
+    .data_response_ready(data_response_ready),
+    .data_response_read_data(data_response_read_data),
+    .data_response_error(data_response_error),
     .completion_valid(completion_valid),
     .completion_ready(completion_ready),
     .completion_wavefront_id(completion_wavefront_id),
@@ -88,6 +104,10 @@ module tb_lane_id;
 
   assign instruction_request_ready = 1'b1;
   assign instruction_response_error = 1'b0;
+  assign data_request_ready = 1'b1;
+  assign data_response_valid = 1'b0;
+  assign data_response_read_data = '0;
+  assign data_response_error = 1'b0;
   assign completion_ready = 1'b1;
 
   always_ff @(posedge clk or negedge reset_n) begin
@@ -115,6 +135,12 @@ module tb_lane_id;
       lane_id_retired      <= 1'b0;
       divergence_completed <= 1'b0;
     end else begin
+      if (data_request_valid || data_response_ready) begin
+        $fatal(1, "Unexpected data request: write=%b addr=%08x data=%08x strb=%b",
+               data_request_write, data_request_address,
+               data_request_write_data, data_request_strobe);
+      end
+
       if (retire_valid) begin
         if (lane_id_retired || retire_pc != 32'h0 ||
             retire_instruction != instruction_memory[0] ||

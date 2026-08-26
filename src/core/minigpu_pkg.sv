@@ -42,7 +42,8 @@ package minigpu_pkg;
     COMPLETE_ILLEGAL     = 3'd1,
     COMPLETE_UNSUPPORTED = 3'd2,
     COMPLETE_MEMORY_ERR  = 3'd3,
-    COMPLETE_DIVERGENCE  = 3'd4
+    COMPLETE_DIVERGENCE  = 3'd4,
+    COMPLETE_MISALIGNED  = 3'd5
   } completion_status_e;
 
   typedef struct packed {

@@ -22,6 +22,17 @@ module compute_unit #(
     input  logic [31:0]                           instruction_response_data,
     input  logic                                  instruction_response_error,
 
+    output logic                                  data_request_valid,
+    input  logic                                  data_request_ready,
+    output logic                                  data_request_write,
+    output logic [XLEN-1:0]                       data_request_address,
+    output logic [XLEN-1:0]                       data_request_write_data,
+    output logic [(XLEN/8)-1:0]                   data_request_strobe,
+    input  logic                                  data_response_valid,
+    output logic                                  data_response_ready,
+    input  logic [XLEN-1:0]                       data_response_read_data,
+    input  logic                                  data_response_error,
+
     output logic                                  completion_valid,
     input  logic                                  completion_ready,
     output logic [ID_WIDTH-1:0]                   completion_wavefront_id,
@@ -57,11 +68,25 @@ module compute_unit #(
   logic [LANES-1:0] vector_execute_valid_mask;
   logic [LANES-1:0] vector_branch_taken_mask;
   logic [LANES-1:0] vector_branch_valid_mask;
+  logic [LANES-1:0][XLEN-1:0] vector_store_data;
 
   logic vector_writeback_enable;
   logic [4:0] vector_writeback_rd;
   logic [LANES-1:0] vector_writeback_mask;
   logic [LANES-1:0][XLEN-1:0] vector_writeback_data;
+
+  logic lsu_issue_valid;
+  logic lsu_issue_ready;
+  minigpu_pkg::mem_op_e lsu_issue_mem_op;
+  logic [LANES-1:0] lsu_issue_mask;
+  logic [LANES-1:0][XLEN-1:0] lsu_issue_address;
+  logic [LANES-1:0][XLEN-1:0] lsu_issue_store_data;
+  logic lsu_done_valid;
+  logic lsu_done_ready;
+  logic [LANES-1:0] lsu_done_mask;
+  logic [LANES-1:0][XLEN-1:0] lsu_done_load_data;
+  logic lsu_done_error;
+  logic lsu_done_misaligned;
 
   wavefront_state #(
     .LANES(LANES),
@@ -115,10 +140,23 @@ module compute_unit #(
     .vector_execute_valid_mask(vector_execute_valid_mask),
     .vector_branch_taken_mask(vector_branch_taken_mask),
     .vector_branch_valid_mask(vector_branch_valid_mask),
+    .vector_store_data(vector_store_data),
     .vector_writeback_enable(vector_writeback_enable),
     .vector_writeback_rd(vector_writeback_rd),
     .vector_writeback_mask(vector_writeback_mask),
     .vector_writeback_data(vector_writeback_data),
+    .lsu_issue_valid(lsu_issue_valid),
+    .lsu_issue_ready(lsu_issue_ready),
+    .lsu_issue_mem_op(lsu_issue_mem_op),
+    .lsu_issue_mask(lsu_issue_mask),
+    .lsu_issue_address(lsu_issue_address),
+    .lsu_issue_store_data(lsu_issue_store_data),
+    .lsu_done_valid(lsu_done_valid),
+    .lsu_done_ready(lsu_done_ready),
+    .lsu_done_mask(lsu_done_mask),
+    .lsu_done_load_data(lsu_done_load_data),
+    .lsu_done_error(lsu_done_error),
+    .lsu_done_misaligned(lsu_done_misaligned),
     .wavefront_advance_valid(wavefront_advance_valid),
     .wavefront_advance_pc(wavefront_advance_pc),
     .wavefront_advance_exec_mask(wavefront_advance_exec_mask),
@@ -157,7 +195,38 @@ module compute_unit #(
     .execute_result(vector_execute_result),
     .execute_valid_mask(vector_execute_valid_mask),
     .branch_taken_mask(vector_branch_taken_mask),
-    .branch_valid_mask(vector_branch_valid_mask)
+    .branch_valid_mask(vector_branch_valid_mask),
+    .store_data(vector_store_data)
+  );
+
+  vector_lsu #(
+    .LANES(LANES),
+    .XLEN(XLEN)
+  ) lsu (
+    .clk(clk),
+    .reset_n(reset_n),
+    .issue_valid(lsu_issue_valid),
+    .issue_ready(lsu_issue_ready),
+    .issue_mem_op(lsu_issue_mem_op),
+    .issue_mask(lsu_issue_mask),
+    .issue_address(lsu_issue_address),
+    .issue_store_data(lsu_issue_store_data),
+    .memory_request_valid(data_request_valid),
+    .memory_request_ready(data_request_ready),
+    .memory_request_write(data_request_write),
+    .memory_request_address(data_request_address),
+    .memory_request_write_data(data_request_write_data),
+    .memory_request_strobe(data_request_strobe),
+    .memory_response_valid(data_response_valid),
+    .memory_response_ready(data_response_ready),
+    .memory_response_read_data(data_response_read_data),
+    .memory_response_error(data_response_error),
+    .done_valid(lsu_done_valid),
+    .done_ready(lsu_done_ready),
+    .done_mask(lsu_done_mask),
+    .done_load_data(lsu_done_load_data),
+    .done_error(lsu_done_error),
+    .done_misaligned(lsu_done_misaligned)
   );
 
 endmodule

@@ -33,10 +33,10 @@ without reproducing a specific commercial design:
 5. A load/store unit serializes or coalesces active-lane memory requests.
 6. A local data share provides explicitly managed tile-local scratchpad memory.
 
-The first RTL slice implements the shared decoder/control types, wavefront
-state, VGPR file, SIMD integer ALUs, and their vector execution datapath.
-Scalar registers, scheduling, load/store, and local data share are separate
-blocks so they can evolve without changing lane execution semantics.
+The current RTL slice implements shared decode/control types, wavefront state,
+the VGPR file, SIMD integer ALUs and branches, and a serialized vector
+load/store unit. Scalar registers, multi-wavefront scheduling, request
+coalescing, and local data share remain separate future blocks.
 
 ## Initial Configuration
 
@@ -87,9 +87,17 @@ present from the first lane-array implementation.
 - Instruction and data addresses are 32-bit byte addresses.
 - `LW` and `SW` require four-byte alignment; misaligned accesses trap.
 - Active lanes may access different addresses.
-- Lane memory operations appear in ascending lane order when serialized.
+- The initial LSU issues one active lane at a time in ascending lane order and
+  permits only one outstanding data-memory request.
+- Inactive lanes issue no requests and receive no load writeback.
+- Alignment is checked across the complete active mask before the first
+  request, so a misaligned vector operation has no memory side effects.
+- A load writes its destination VGPR only after all lane responses succeed.
+- A response error stops the instruction. Earlier store lanes may already have
+  completed; transactional rollback is not provided.
 - A lane's memory operations are observed in program order.
-- No caches, coherence, atomics, or virtual memory are in the initial target.
+- No coalescing, caches, coherence, atomics, or virtual memory are in the
+  initial target.
 - Scratchpad memory may be added behind the same request/response contract.
 
 The abandoned `alee-ram` branch is not an architectural dependency. Memory

@@ -27,7 +27,8 @@ module vector_datapath #(
     output logic [LANES-1:0][XLEN-1:0]        execute_result,
     output logic [LANES-1:0]                  execute_valid_mask,
     output logic [LANES-1:0]                  branch_taken_mask,
-    output logic [LANES-1:0]                  branch_valid_mask
+    output logic [LANES-1:0]                  branch_valid_mask,
+    output logic [LANES-1:0][XLEN-1:0]        store_data
 );
 
   logic [LANES-1:0][XLEN-1:0] rs1_data;
@@ -68,6 +69,7 @@ module vector_datapath #(
     execute_valid_mask = issue_valid ? alu_valid_mask : '0;
     branch_taken_mask  = issue_valid ? raw_branch_taken_mask : '0;
     branch_valid_mask  = issue_valid ? raw_branch_valid_mask : '0;
+    store_data         = rs2_data;
   end
 
   simd_alu #(

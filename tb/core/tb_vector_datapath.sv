@@ -21,7 +21,7 @@ module tb_vector_datapath;
   logic [4:0] writeback_rd;
   logic [LANES-1:0] writeback_mask;
   logic [LANES-1:0][XLEN-1:0] writeback_data;
-  logic [LANES-1:0][XLEN-1:0] execute_result;
+  logic [LANES-1:0][XLEN-1:0] execute_result, store_data;
   logic [LANES-1:0] execute_valid_mask;
   logic [LANES-1:0] branch_taken_mask, branch_valid_mask;
   logic branch_all_taken, branch_divergent;
@@ -48,7 +48,8 @@ module tb_vector_datapath;
     .execute_result(execute_result),
     .execute_valid_mask(execute_valid_mask),
     .branch_taken_mask(branch_taken_mask),
-    .branch_valid_mask(branch_valid_mask)
+    .branch_valid_mask(branch_valid_mask),
+    .store_data(store_data)
   );
 
   branch_resolver #(.LANES(LANES)) resolver (
@@ -114,7 +115,8 @@ module tb_vector_datapath;
       $fatal(1, "Vector register ADD was not valid");
     end
     for (int lane = 0; lane < LANES; lane++) begin
-      if (execute_result[lane] != 32'd30 + (2 * lane)) begin
+      if (execute_result[lane] != 32'd30 + (2 * lane) ||
+          store_data[lane] != 32'd20 + lane) begin
         $fatal(1, "Vector datapath register operation failed on lane %0d", lane);
       end
     end
