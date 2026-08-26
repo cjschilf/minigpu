@@ -1,4 +1,5 @@
 # Don't track Verilator build output
+build/
 obj_dir/
 logs/
 *.vcd
